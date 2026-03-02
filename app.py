@@ -27,7 +27,6 @@ def get_duration(amt_str):
     if match: return int(match.group(1))
     return -1 
 
-# 📌 【新增】解析續時的時數 (例如打 "1", "0.5", "2H" 都能抓出來)
 def get_extension(ext_str):
     if not ext_str: return 0.0
     match = re.search(r'([\d\.]+)', str(ext_str))
@@ -49,6 +48,46 @@ def apply_recommended_time(new_time):
 # 網頁基礎設定與 Session State 狀態記憶
 # ==========================================
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
+
+# ==========================================
+# 🎨 網頁視覺美化 (自訂尊爵背景)
+# ==========================================
+page_bg_img = '''
+<style>
+/* 控制整個網頁大背景的設定 */
+.stApp {
+    /* 質感漸層色：深藍灰漸變到低調深綠色，KTV 夜生活高級感 */
+    background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+    background-size: cover;
+    background-attachment: fixed;
+}
+
+/* 調整主標題顏色讓它在深色背景更清楚 */
+h1 {
+    color: #ffffff !important;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+h3 {
+    color: #e0e0e0 !important;
+}
+
+/* 幫下方表單輸入區加上半透明的毛玻璃效果 */
+div[data-testid="stForm"] {
+    background-color: rgba(255, 255, 255, 0.08);
+    border-radius: 15px;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* 讓一般文字也稍微亮一點 */
+p, label, .stCheckbox label {
+    color: #f0f0f0 !important;
+}
+</style>
+'''
+st.markdown(page_bg_img, unsafe_allow_html=True)
+
 st.title("🎤 賓士府前店 - 快速訂位系統")
 
 if "input_time" not in st.session_state:
@@ -145,11 +184,9 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         b_name = str(r[3]).strip() if len(r) > 3 else ""
                         if not b_time or ":" not in b_time: continue
                         
-                        # 📌 【關鍵升級】同時抓取「消費金額(r[5])」和「續時(r[9])」
                         b_dur = get_duration(r[5] if len(r) > 5 else "")
                         b_ext = get_extension(r[9] if len(r) > 9 else "")
                         
-                        # 如果不是「無時數(-1)」，就把續時直接加上去
                         if b_dur != -1:
                             b_dur += b_ext
 
