@@ -309,14 +309,18 @@ if submitted:
                 break 
 
         if target_row_number != -1:
-            # 🕒 【新增】動態抓取台灣當天日期，並與輸入的接洽人合併
             tw_now = datetime.datetime.now() + datetime.timedelta(hours=8)
-            # 如果接洽人有打字（例如「軒」），就幫他加上日期（例如「軒3/3」）；如果沒打字就留白
             接洽人_寫入 = f"{接洽人}{tw_now.month}/{tw_now.day}" if 接洽人.strip() != "" else ""
 
-            cell_range = f"D{target_row_number}:L{target_row_number}"
-            update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人_寫入, 續時, 備註, 實際包廂]]
-            sheet.update(range_name=cell_range, values=update_values)
+            # 📌 關鍵修改 1：把姓名、電話等客資，寫入 D 到 K 欄
+            cell_range_data = f"D{target_row_number}:K{target_row_number}"
+            update_values_data = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人_寫入, 續時, 備註]]
+            sheet.update(range_name=cell_range_data, values=update_values_data)
+            
+            # 📌 關鍵修改 2：把實際包廂，精準寫入 B 欄！
+            if 實際包廂 != "":
+                sheet.update(range_name=f"B{target_row_number}", values=[[實際包廂]])
+
             st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的包廂。")
             st.balloons()
             
