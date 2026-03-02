@@ -23,7 +23,7 @@ def float_to_time(f):
     return f"{h:02d}:{m:02d}"
 
 def get_duration(amt_str):
-    # 如果有打幾 H 就抓出來，如果沒打 (例如董事之友)，就回傳 -1 代表未知長度
+    # 【關鍵升級】如果沒打時數 (例如董事之友)，回傳 -1 代表無限長 (鎖定到打烊)
     match = re.search(r'(\d+)\s*[Hh]', str(amt_str))
     if match: return int(match.group(1))
     return -1 
@@ -110,14 +110,14 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
 
             for room_no in target_rooms:
                 room_bookings = []
-                # 1. 把這個包廂今天「所有」的訂位都抓出來
+                # 1. 抓出該包廂今天的「所有訂位」
                 for r in data:
                     val_B = str(r[1]).strip() if len(r) > 1 else ""
                     val_L = str(r[11]).strip() if len(r) > 11 else ""
                     
                     if room_no in val_B or room_no in val_L:
-                        b_time = r[2]
-                        b_name = r[3]
+                        b_time = str(r[2]).strip()
+                        b_name = str(r[3]).strip()
                         if not b_time or ":" not in b_time: continue
                         
                         b_dur = get_duration(r[5] if len(r) > 5 else "")
@@ -126,50 +126,67 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                             'time_str': b_time, 'start': b_start, 'dur': b_dur, 'name': b_name
                         })
                 
-                # 照時間先後排好
                 room_bookings.sort(key=lambda x: x['start'])
                 
-                # 2. 檢查你查的這個時間 (req_start) 有沒有跟別人「直接撞到」
-                conflicting_booking = None
+                # 組合今天的訂位清單字串
+                today_strs = []
                 for b in room_bookings:
-                    # 如果時數未知 (-1)，就當作他唱到打烊 (設定個超大數字 48.0)
-                    b_end = b['start'] + b['dur'] + 1 if b['dur'] != -1 else 48.0 
-                    
-                    # 情況A：剛好落在別人唱的時間內
-                    if b['start'] <= req_start < b_end:
-                        conflicting_booking = b
+                    dur_str = f"({b['dur']}H)" if b['dur'] != -1 else "(無時數)"
+                    today_strs.append(f"{b['time_str']} {b['name']}{dur_str}")
+                today_info = "今日：" + "、".join(today_strs) if today_strs else "今日無訂位"
+                
+                # 2. 建立今日的時間軸區塊 (包含清包廂1H)
+                timeline = []
+                for b in room_bookings:
+                    st_val = b['start']
+                    # 如果無時數，直接鎖死到 48.0 (代表無限往後延伸)
+                    ed_val = b['start'] + b['dur'] + 1 if b['dur'] != -1 else 48.0
+                    timeline.append((st_val, ed_val, b))
+                
+                # 3. 檢查想要訂的時間 (req_start) 是否直接撞到既有訂位
+                blocker = None
+                for (st_val, ed_val, b) in timeline:
+                    # 只要想訂的時間 落在別人開始前1H 到 別人結束之間，就是撞場
+                    if req_start >= st_val - 1 and req_start < ed_val:
+                        blocker = b
                         break
-                    # 情況B：你想訂的時間比別人早，但剩下的時間根本不夠唱 (連1小時都不到)
-                    elif req_start < b['start'] and (b['start'] - req_start - 1) <= 0:
-                        conflicting_booking = b
-                        break
-
-                if conflicting_booking:
-                    # 💥 直接撞場了！(顯示紅/黃燈警告)
-                    b = conflicting_booking
-                    rec_before = float_to_time(b['start'] - 1)
-                    b_end_str = float_to_time(b['start'] + b['dur'] + 1) if b['dur'] != -1 else "需看訂位表"
-                    dur_text = f" (預計唱 {b['dur']}H)" if b['dur'] != -1 else ""
+                
+                if blocker:
+                    # 💥 發生衝突：算出往前/往後時間
+                    rec_before = float_to_time(blocker['start'] - 1)
                     
-                    tail_msg = f"可訂 **{b_end_str}**" if b_end_str != "需看訂位表" else "**需看訂位表**"
-                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{b['time_str']} 已有「{b['name']}」訂位{dur_text} 👉 往前最晚可唱至 **{rec_before}**，往後 {tail_msg}")
+                    # 聰明計算往後最快時間 (考慮連環撞場)
+                    t = blocker['start'] + blocker['dur'] + 1 if blocker['dur'] != -1 else 48.0
+                    while True:
+                        next_blocker = None
+                        for (st_val, ed_val, b) in timeline:
+                            if t >= st_val - 1 and t < ed_val:
+                                next_blocker = (st_val, ed_val)
+                                break
+                        if not next_blocker: break
+                        t = next_blocker[1]
+                        if t >= 48.0: break
+                    
+                    rec_after = "需看訂位表" if t >= 48.0 else float_to_time(t)
+                    tail_msg = f"往後可訂 **{rec_after}**" if rec_after != "需看訂位表" else "往後 **需看訂位表**"
+                    
+                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{today_info}\n👉 該時段不可訂！往前最晚可唱至 **{rec_before}**，{tail_msg}")
                 else:
-                    # 🎉 沒有直接撞場！(顯示綠燈，但要幫忙看後面有沒有人)
-                    next_bookings = [b for b in room_bookings if b['start'] > req_start]
-                    if next_bookings:
-                        # 後面還有人！
-                        next_b = next_bookings[0]
-                        hard_stop = float_to_time(next_b['start'] - 1)
-                        b_end_str = float_to_time(next_b['start'] + next_b['dur'] + 1) if next_b['dur'] != -1 else "需看訂位表"
-                        
-                        tail_msg = f"可訂 **{b_end_str}**" if b_end_str != "需看訂位表" else "**需看訂位表**"
-                        vip_status_msgs.append(f"✅ **【{room_no}】**：{next_b['time_str']} 已有「{next_b['name']}」訂位！最晚可唱至 **{hard_stop}**，往後 {tail_msg}")
-                    else:
-                        # 今天後面都沒人了！
-                        vip_status_msgs.append(f"✅ **【{room_no}】**：空閒可訂！")
-                    
-                    # 只要沒有「直接撞場」，這個包廂就能列入可選擇清單
+                    # 🎉 沒撞場，可接！但要幫忙看後面還有沒有人
                     avail_vips.append(room_no)
+                    next_b = None
+                    for (st_val, ed_val, b) in timeline:
+                        if st_val > req_start:
+                            if not next_b or st_val < next_b['start']:
+                                next_b = b
+                    
+                    if next_b:
+                        # 後面有人！提醒最晚唱到幾點
+                        hard_stop = float_to_time(next_b['start'] - 1)
+                        vip_status_msgs.append(f"✅ **【{room_no}】**：{today_info}\n👉 **可訂！**最晚可唱至 **{hard_stop}**")
+                    else:
+                        # 今天後面都沒人了
+                        vip_status_msgs.append(f"✅ **【{room_no}】**：{today_info}\n👉 **空閒可訂！**")
 
             st.session_state.available_vips = avail_vips
 
