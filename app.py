@@ -6,17 +6,15 @@ import time
 import re
 
 # ==========================================
-# 🛠️ 輔助小工具 (時間計算與時數解析)
+# 🛠️ 輔助小工具
 # ==========================================
 def time_to_float(t_str):
-    """把時間轉成數字 (例如 22:00 -> 22.0, 凌晨 02:00 -> 26.0)"""
     if not t_str or ":" not in t_str: return 0
     h, m = map(int, t_str.split(":"))
-    if h < 7: h += 24 # 凌晨算在同一天的晚班
+    if h < 7: h += 24 
     return h + m/60.0
 
 def float_to_time(f):
-    """把數字轉回時間字串 (例如 28.0 -> 04:00)"""
     h = int(f)
     m = int(round((f - h) * 60))
     if m == 60:
@@ -25,24 +23,29 @@ def float_to_time(f):
     return f"{h:02d}:{m:02d}"
 
 def get_duration(amt_str):
-    """從消費金額中自動抓出唱幾小時 (例如 '4099/5H' -> 5)"""
     match = re.search(r'(\d+)\s*[Hh]', str(amt_str))
     if match: return int(match.group(1))
-    return 3 # 如果沒打 H，系統預設以 3 小時計算防撞
+    return 3 
 
 # ==========================================
-# 網頁基礎設定與防連點機制
+# 網頁基礎設定與 Session State 狀態記憶
 # ==========================================
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
 st.title("🎤 賓士府前店 - 快速訂位系統")
 
-# 初始化 Session State (用來記住查詢結果跟防止連點)
+# 初始化所有的記憶體 (包含防連點、查詢訊息、輸入框狀態)
+if "input_time" not in st.session_state:
+    st.session_state.input_time = "1800"
 if "last_submit" not in st.session_state:
     st.session_state.last_submit = 0
 if "check_msg" not in st.session_state:
     st.session_state.check_msg = None
 if "check_status" not in st.session_state:
     st.session_state.check_status = None
+if "rec_before" not in st.session_state:
+    st.session_state.rec_before = None
+if "rec_after" not in st.session_state:
+    st.session_state.rec_after = None
 
 # ==========================================
 # ❶ 第一階段：查詢時段與包廂
@@ -52,16 +55,18 @@ colA, colB, colC = st.columns(3)
 with colA:
     日期 = st.date_input("選擇日期", datetime.date.today())
 with colB:
-    時間 = st.text_input("時間 (例如 1800)", value="1800")
+    # 這裡綁定了 key，讓按鈕可以直接控制這個輸入框！
+    時間 = st.text_input("時間 (例如 1800)", key="input_time")
 with colC:
-    # 加入了你指定的 VIP 包廂列表
     包廂 = st.selectbox("指定VIP包廂", ["不指定", "101", "102", "103", "205", "305", "317"])
 
-# 當按下查詢按鈕時
+# --- 🔍 查詢按鈕 ---
 if st.button("🔍 檢查空位與包廂", use_container_width=True):
     st.info("🔄 系統查詢中，請稍候...")
+    # 每次重新查詢時，先把舊的推薦按鈕清空
+    st.session_state.rec_before = None
+    st.session_state.rec_after = None
     
-    # 時間格式防呆
     if len(時間) == 4 and ":" not in 時間:
         時間 = 時間[:2] + ":" + 時間[2:]
         
@@ -75,7 +80,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
     file_name = file_date_str + "訂位表"
 
     try:
-        # 連線雲端讀取資料
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
         sheet = gc.open(file_name).worksheet(班別)
         data = sheet.get_all_values()
@@ -83,13 +87,12 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         is_vip_conflict = False
         vip_conflict_msg = ""
         
-        # --- 🛡️ 智能演算法：VIP 包廂防撞與推薦 ---
+        # 🛡️ VIP 包廂防撞
         if 包廂 != "不指定":
             req_start = time_to_float(時間)
-            req_end = req_start + 3 # 預設新客人至少唱 3H 來看衝突
+            req_end = req_start + 3 
             
             for r in data:
-                # 假設包廂寫在 L 欄 (Index 11)
                 if len(r) > 11 and r[11] == 包廂:
                     b_time = r[2]
                     b_name = r[3]
@@ -99,15 +102,14 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                     b_start = time_to_float(b_time)
                     b_end = b_start + b_dur
                     
-                    # 衝突判斷：只要時間有重疊 (外加 1 小時清包廂緩衝)
                     if req_end + 1 > b_start and req_start < b_end + 1:
                         is_vip_conflict = True
-                        rec_before = float_to_time(b_start - 1)
-                        rec_after = float_to_time(b_end + 1)
-                        vip_conflict_msg = f"⚠️ **【VIP {包廂}】已被預訂！**\n👉 於 **{b_time}** 已被「**{b_name}**」預訂 (預計唱 {b_dur}H)。\n\n💡 智能推薦：\n⬆️ 往前最晚需於 **{rec_before}** 前清空包廂\n⬇️ 往後最快需等 **{rec_after}** 才有空"
+                        st.session_state.rec_before = float_to_time(b_start - 1)
+                        st.session_state.rec_after = float_to_time(b_end + 1)
+                        vip_conflict_msg = f"⚠️ **【VIP {包廂}】已被預訂！**\n👉 於 **{b_time}** 已被「**{b_name}**」預訂 (預計唱 {b_dur}H)。"
                         break
         
-        # --- 🛡️ 一般時段客滿檢查 ---
+        # 🛡️ 一般時段客滿檢查
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -136,26 +138,21 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         is_time_full = True
                 break
                 
-        # 產生查詢結果訊息
+        # 產生存檔結果
         if is_vip_conflict:
             st.session_state.check_status = "error"
             st.session_state.check_msg = vip_conflict_msg
         elif is_time_full:
             booked_by = "、".join(booked_names)
-            msg = f"⚠️ 糟糕！【{時間}】的一般包廂已經被「{booked_by}」全數訂滿了！\n\n💡 系統尋找最接近空位："
-            # 尋找候補
-            n_before, n_after = None, None
+            st.session_state.check_status = "warning"
+            st.session_state.check_msg = f"⚠️ 糟糕！【{時間}】的一般包廂已經被「{booked_by}」全數訂滿了！"
+            
             for i in range(requested_index - 1, -1, -1):
                 if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "":
-                    n_before = data[i][2]; break
+                    st.session_state.rec_before = data[i][2]; break
             for i in range(requested_index + 1, len(data)):
                 if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "": 
-                    n_after = data[i][2]; break
-                    
-            if n_before: msg += f"\n⬆️ 往前最快：【{n_before}】"
-            if n_after: msg += f"\n⬇️ 往後最快：【{n_after}】"
-            st.session_state.check_status = "warning"
-            st.session_state.check_msg = msg
+                    st.session_state.rec_after = data[i][2]; break
         elif target_row_number != -1:
             st.session_state.check_status = "success"
             st.session_state.check_msg = f"✅ **【{時間}】目前還有位子！** 您可以繼續填寫下方資料完成訂位。"
@@ -166,16 +163,44 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
     except Exception as e:
         st.error(f"❌ 查詢失敗 (請確認該日期檔案已建立)：{e}")
 
-# 顯示查詢結果
+
+# --- 💬 顯示查詢結果與【互動按鈕】 ---
 if st.session_state.check_msg:
-    if st.session_state.check_status == "success": st.success(st.session_state.check_msg)
-    elif st.session_state.check_status == "warning": st.warning(st.session_state.check_msg)
-    else: st.error(st.session_state.check_msg)
+    if st.session_state.check_status == "success": 
+        st.success(st.session_state.check_msg)
+    elif st.session_state.check_status == "warning": 
+        st.warning(st.session_state.check_msg)
+    else: 
+        st.error(st.session_state.check_msg)
+
+    # 🚀 魔法按鈕區：如果有推薦空位，顯示可以一鍵帶入的按鈕
+    if st.session_state.rec_before or st.session_state.rec_after:
+        st.markdown("💡 **系統為您尋找最接近空位，請點擊按鈕直接帶入：**")
+        col_btn1, col_btn2 = st.columns(2)
+        
+        if st.session_state.rec_before:
+            if col_btn1.button(f"⏱️ 直接改為 {st.session_state.rec_before}", use_container_width=True):
+                # 自動把時間改成沒冒號的格式 (例如 1810)，並切換成綠燈狀態！
+                st.session_state.input_time = st.session_state.rec_before.replace(":", "")
+                st.session_state.check_status = "success"
+                st.session_state.check_msg = f"✅ 已為您一鍵切換至【{st.session_state.rec_before}】！請繼續填寫下方客資。"
+                st.session_state.rec_before = None
+                st.session_state.rec_after = None
+                st.rerun() # 立刻刷新網頁
+                
+        if st.session_state.rec_after:
+            if col_btn2.button(f"⏱️ 直接改為 {st.session_state.rec_after}", use_container_width=True):
+                st.session_state.input_time = st.session_state.rec_after.replace(":", "")
+                st.session_state.check_status = "success"
+                st.session_state.check_msg = f"✅ 已為您一鍵切換至【{st.session_state.rec_after}】！請繼續填寫下方客資。"
+                st.session_state.rec_before = None
+                st.session_state.rec_after = None
+                st.rerun() # 立刻刷新網頁
 
 st.divider()
 
 # ==========================================
-# ❷ 第二階段：填寫客資與送出 (包含 3 秒防連點)
+# ❷ 第二階段：填寫客資與送出 
 # ==========================================
 st.markdown("### ❷ 填寫客資並送出")
 with st.form("booking_form"):
@@ -207,8 +232,12 @@ if submitted:
 
     st.info("🔄 正在寫入雲端表單，請稍候...")
     try:
-        if len(時間) == 4 and ":" not in 時間: 時間 = 時間[:2] + ":" + 時間[2:]
-        hour = int(時間.split(":")[0])
+        # 這裡會抓取 st.session_state.input_time 的值
+        確認時間 = st.session_state.input_time 
+        if len(確認時間) == 4 and ":" not in 確認時間: 
+            確認時間 = 確認時間[:2] + ":" + 確認時間[2:]
+            
+        hour = int(確認時間.split(":")[0])
         if 7 <= hour < 17: 班別 = "早班"
         elif 17 <= hour <= 23: 班別 = "中班"
         else: 班別 = "晚班" 
@@ -221,10 +250,9 @@ if submitted:
         sheet = gc.open(file_name).worksheet(班別)
         data = sheet.get_all_values()
         
-        # 尋找空位寫入 (再找一次確保這幾秒內沒被別人訂走)
         target_row_number = -1
         for index, row in enumerate(data):
-            if len(row) > 3 and row[2] == 時間:
+            if len(row) > 3 and row[2] == 確認時間:
                 if row[3] == "": 
                     target_row_number = index + 1 
                 else:
@@ -240,15 +268,17 @@ if submitted:
                 break 
 
         if target_row_number != -1:
-            # 範圍涵蓋 D(姓名)一路到 L(包廂)
             cell_range = f"D{target_row_number}:L{target_row_number}"
-            # 依序寫入：姓名, 人數, 金額, 電話, 卡號, 接洽人, 續時, 備註, [新增的]包廂！
             update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註, 包廂 if 包廂 != "不指定" else ""]]
             sheet.update(range_name=cell_range, values=update_values)
-            st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{時間}** 的包廂。")
+            st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的包廂。")
             st.balloons()
+            
+            # 訂位成功後，清除查詢狀態，準備迎接下一組客人
+            st.session_state.check_msg = None
+            st.session_state.check_status = None
         else:
-            st.error(f"⚠️ 糟糕！您填寫資料的這段期間，【{時間}】的空位被搶走或有衝突了！請重新查詢。")
+            st.error(f"⚠️ 糟糕！您填寫資料的這段期間，【{確認時間}】的空位被搶走或有衝突了！請重新查詢。")
 
     except Exception as e:
         st.error(f"❌ 發生未知的錯誤：{e}")
