@@ -23,9 +23,10 @@ def float_to_time(f):
     return f"{h:02d}:{m:02d}"
 
 def get_duration(amt_str):
+    # 如果有打幾 H 就抓出來，如果沒打 (例如董事之友)，就回傳 -1 代表未知長度
     match = re.search(r'(\d+)\s*[Hh]', str(amt_str))
     if match: return int(match.group(1))
-    return 3 
+    return -1 
 
 # ==========================================
 # 🎯 魔法按鈕專屬動作 (Callback)
@@ -97,41 +98,78 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         is_vip_conflict = False
         vip_conflict_msg = ""
         
+        # ==========================================
+        # 🛡️ 【全天候透視版】VIP 包廂群組掃描防撞
+        # ==========================================
         if 包廂 != "不指定":
             target_rooms = ["101", "102", "103", "205", "305"] if 包廂 == "小VIP" else ["317"]
             req_start = time_to_float(時間)
-            req_end = req_start + 3 
             
             vip_status_msgs = []
             avail_vips = []
 
             for room_no in target_rooms:
-                room_conflict = False
-                rec_before = None
-                rec_after = None
-                c_details = []
-
+                room_bookings = []
+                # 1. 把這個包廂今天「所有」的訂位都抓出來
                 for r in data:
                     val_B = str(r[1]).strip() if len(r) > 1 else ""
                     val_L = str(r[11]).strip() if len(r) > 11 else ""
                     
                     if room_no in val_B or room_no in val_L:
                         b_time = r[2]
+                        b_name = r[3]
+                        if not b_time or ":" not in b_time: continue
+                        
                         b_dur = get_duration(r[5] if len(r) > 5 else "")
                         b_start = time_to_float(b_time)
-                        b_end = b_start + b_dur
-                        
-                        if req_end + 1 > b_start and req_start < b_end + 1:
-                            room_conflict = True
-                            rec_before = float_to_time(b_start - 1)
-                            rec_after = float_to_time(b_end + 1)
-                            c_details.append(f"{b_time} 已訂({b_dur}H)")
+                        room_bookings.append({
+                            'time_str': b_time, 'start': b_start, 'dur': b_dur, 'name': b_name
+                        })
+                
+                # 照時間先後排好
+                room_bookings.sort(key=lambda x: x['start'])
+                
+                # 2. 檢查你查的這個時間 (req_start) 有沒有跟別人「直接撞到」
+                conflicting_booking = None
+                for b in room_bookings:
+                    # 如果時數未知 (-1)，就當作他唱到打烊 (設定個超大數字 48.0)
+                    b_end = b['start'] + b['dur'] + 1 if b['dur'] != -1 else 48.0 
+                    
+                    # 情況A：剛好落在別人唱的時間內
+                    if b['start'] <= req_start < b_end:
+                        conflicting_booking = b
+                        break
+                    # 情況B：你想訂的時間比別人早，但剩下的時間根本不夠唱 (連1小時都不到)
+                    elif req_start < b['start'] and (b['start'] - req_start - 1) <= 0:
+                        conflicting_booking = b
+                        break
 
-                if not room_conflict:
-                    avail_vips.append(room_no)
-                    vip_status_msgs.append(f"✅ **【{room_no}】**：空閒可訂！")
+                if conflicting_booking:
+                    # 💥 直接撞場了！(顯示紅/黃燈警告)
+                    b = conflicting_booking
+                    rec_before = float_to_time(b['start'] - 1)
+                    b_end_str = float_to_time(b['start'] + b['dur'] + 1) if b['dur'] != -1 else "需看訂位表"
+                    dur_text = f" (預計唱 {b['dur']}H)" if b['dur'] != -1 else ""
+                    
+                    tail_msg = f"可訂 **{b_end_str}**" if b_end_str != "需看訂位表" else "**需看訂位表**"
+                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{b['time_str']} 已有「{b['name']}」訂位{dur_text} 👉 往前最晚可唱至 **{rec_before}**，往後 {tail_msg}")
                 else:
-                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{ '、'.join(c_details) } 👉 往前最晚只能唱到 **{rec_before}**，或改訂 **{rec_after}** 之後")
+                    # 🎉 沒有直接撞場！(顯示綠燈，但要幫忙看後面有沒有人)
+                    next_bookings = [b for b in room_bookings if b['start'] > req_start]
+                    if next_bookings:
+                        # 後面還有人！
+                        next_b = next_bookings[0]
+                        hard_stop = float_to_time(next_b['start'] - 1)
+                        b_end_str = float_to_time(next_b['start'] + next_b['dur'] + 1) if next_b['dur'] != -1 else "需看訂位表"
+                        
+                        tail_msg = f"可訂 **{b_end_str}**" if b_end_str != "需看訂位表" else "**需看訂位表**"
+                        vip_status_msgs.append(f"✅ **【{room_no}】**：{next_b['time_str']} 已有「{next_b['name']}」訂位！最晚可唱至 **{hard_stop}**，往後 {tail_msg}")
+                    else:
+                        # 今天後面都沒人了！
+                        vip_status_msgs.append(f"✅ **【{room_no}】**：空閒可訂！")
+                    
+                    # 只要沒有「直接撞場」，這個包廂就能列入可選擇清單
+                    avail_vips.append(room_no)
 
             st.session_state.available_vips = avail_vips
 
@@ -142,6 +180,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 is_vip_conflict = True
                 vip_conflict_msg = "😭 **糟糕！該時段的VIP包廂皆已客滿！**\n\n" + "\n\n".join(vip_status_msgs)
         
+        # 🛡️ 一般時段客滿檢查
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -170,6 +209,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         is_time_full = True
                 break
                 
+        # 產生存檔結果 
         if 包廂 != "不指定":
             if is_vip_conflict:
                 st.session_state.check_status = "error"
@@ -312,12 +352,10 @@ if submitted:
             tw_now = datetime.datetime.now() + datetime.timedelta(hours=8)
             接洽人_寫入 = f"{接洽人}{tw_now.month}/{tw_now.day}" if 接洽人.strip() != "" else ""
 
-            # 📌 關鍵修改 1：把姓名、電話等客資，寫入 D 到 K 欄
             cell_range_data = f"D{target_row_number}:K{target_row_number}"
             update_values_data = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人_寫入, 續時, 備註]]
             sheet.update(range_name=cell_range_data, values=update_values_data)
             
-            # 📌 關鍵修改 2：把實際包廂，精準寫入 B 欄！
             if 實際包廂 != "":
                 sheet.update(range_name=f"B{target_row_number}", values=[[實際包廂]])
 
