@@ -27,6 +27,14 @@ def get_duration(amt_str):
     if match: return int(match.group(1))
     return -1 
 
+# 📌 【新增】解析續時的時數 (例如打 "1", "0.5", "2H" 都能抓出來)
+def get_extension(ext_str):
+    if not ext_str: return 0.0
+    match = re.search(r'([\d\.]+)', str(ext_str))
+    if match:
+        return float(match.group(1))
+    return 0.0
+
 # ==========================================
 # 🎯 魔法按鈕專屬動作 (Callback)
 # ==========================================
@@ -137,7 +145,14 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         b_name = str(r[3]).strip() if len(r) > 3 else ""
                         if not b_time or ":" not in b_time: continue
                         
+                        # 📌 【關鍵升級】同時抓取「消費金額(r[5])」和「續時(r[9])」
                         b_dur = get_duration(r[5] if len(r) > 5 else "")
+                        b_ext = get_extension(r[9] if len(r) > 9 else "")
+                        
+                        # 如果不是「無時數(-1)」，就把續時直接加上去
+                        if b_dur != -1:
+                            b_dur += b_ext
+
                         b_start = time_to_float(b_time)
                         room_bookings.append({
                             'time_str': b_time, 'start': b_start, 'dur': b_dur, 'name': b_name
@@ -147,7 +162,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 
                 today_strs = []
                 for b in room_bookings:
-                    dur_str = f"({b['dur']}H)" if b['dur'] != -1 else "(無時數)"
+                    dur_str = f"({b['dur']:g}H)" if b['dur'] != -1 else "(無時數)"
                     today_strs.append(f"{b['time_str']} {b['name']}{dur_str}")
                 today_info = "今日：" + "、".join(today_strs) if today_strs else "今日無訂位"
                 
@@ -324,7 +339,6 @@ with st.form("booking_form"):
         else:
             實際包廂 = ""
 
-    # 📌 【新增】指定包廂打勾區塊
     是否指定包廂 = st.checkbox("🎯 標記為『指定包廂』 (打勾後會在表單包廂號碼前加上『指』字防誤刪)")
 
     submitted = st.form_submit_button("🚀 確認送出訂位", use_container_width=True)
@@ -384,15 +398,12 @@ if submitted:
             update_values_data = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人_寫入, 續時, 備註]]
             sheet.update(range_name=cell_range_data, values=update_values_data)
             
-            # 📌 處理包廂寫入邏輯
             實際包廂_寫入 = 實際包廂
             if 實際包廂 != "":
-                # 如果有打勾，就幫他在前面加上「指」字
                 if 是否指定包廂:
                     實際包廂_寫入 = f"指{實際包廂}"
                 sheet.update(range_name=f"B{target_row_number}", values=[[實際包廂_寫入]])
                 
-                # 📌 處理 VIP 底色自動上色機制 (#00FF00 = 綠色)
                 try:
                     if 包廂選項 in ["小VIP", "大VIP(317)"]:
                         sheet.format(f"B{target_row_number}", {
@@ -403,7 +414,6 @@ if submitted:
                             }
                         })
                     else:
-                        # 如果是一般包廂，確保底色是乾淨的白色
                         sheet.format(f"B{target_row_number}", {
                             "backgroundColor": {
                                 "red": 1.0,
@@ -412,7 +422,7 @@ if submitted:
                             }
                         })
                 except Exception:
-                    pass # 如果改變格式失敗，也不要影響訂位流程
+                    pass 
 
             st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的 **{實際包廂_寫入 if 實際包廂_寫入 else '一般'}** 包廂。")
             st.balloons()
