@@ -68,7 +68,6 @@ with colA:
 with colB:
     時間 = st.text_input("時間 (例如 1800)", key="input_time")
 with colC:
-    # 📌 【升級】增加「指定其他包廂」的萬用選項
     包廂選項 = st.selectbox("指定包廂", ["不指定", "小VIP", "大VIP(317)", "指定其他包廂"])
     自訂包廂號碼 = ""
     if 包廂選項 == "指定其他包廂":
@@ -76,7 +75,6 @@ with colC:
 
 # --- 🔍 查詢按鈕 ---
 if st.button("🔍 檢查空位與包廂", use_container_width=True):
-    # 防呆：如果選了指定包廂卻沒打號碼
     if 包廂選項 == "指定其他包廂" and 自訂包廂號碼.strip() == "":
         st.error("❌ 請在上方輸入您想指定的「包廂號碼」再按查詢喔！")
         st.stop()
@@ -107,15 +105,18 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         vip_conflict_msg = ""
         
         # ==========================================
-        # 🛡️ 【全天候透視版】支援任何指定包廂掃描
+        # 🛡️ 【動態緩衝時間版】支援VIP 1H / 一般包廂 0.5H
         # ==========================================
         if 包廂選項 != "不指定":
             if 包廂選項 == "小VIP":
                 target_rooms = ["101", "102", "103", "205", "305"]
+                buffer_time = 1.0  # VIP預留 1 小時
             elif 包廂選項 == "大VIP(317)":
                 target_rooms = ["317"]
+                buffer_time = 1.0  # VIP預留 1 小時
             elif 包廂選項 == "指定其他包廂":
                 target_rooms = [自訂包廂號碼.strip()]
+                buffer_time = 0.5  # 一般包廂只要預留半小時(30分鐘)！
                 
             req_start = time_to_float(時間)
             
@@ -156,22 +157,22 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 timeline = []
                 for b in room_bookings:
                     st_val = b['start']
-                    ed_val = b['start'] + b['dur'] + 1 if b['dur'] != -1 else 48.0
+                    ed_val = b['start'] + b['dur'] + buffer_time if b['dur'] != -1 else 48.0
                     timeline.append((st_val, ed_val, b))
                 
                 blocker = None
                 for (st_val, ed_val, b) in timeline:
-                    if req_start >= st_val - 1 and req_start < ed_val:
+                    if req_start >= st_val - buffer_time and req_start < ed_val:
                         blocker = b
                         break
                 
                 if blocker:
-                    rec_before = float_to_time(blocker['start'] - 1)
-                    t = blocker['start'] + blocker['dur'] + 1 if blocker['dur'] != -1 else 48.0
+                    rec_before = float_to_time(blocker['start'] - buffer_time)
+                    t = blocker['start'] + blocker['dur'] + buffer_time if blocker['dur'] != -1 else 48.0
                     while True:
                         next_blocker = None
                         for (st_val, ed_val, b) in timeline:
-                            if t >= st_val - 1 and t < ed_val:
+                            if t >= st_val - buffer_time and t < ed_val:
                                 next_blocker = (st_val, ed_val)
                                 break
                         if not next_blocker: break
@@ -191,7 +192,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                                 next_b = b
                     
                     if next_b:
-                        hard_stop = float_to_time(next_b['start'] - 1)
+                        hard_stop = float_to_time(next_b['start'] - buffer_time)
                         vip_status_msgs.append(f"✅ **【{room_no}】**：{today_info}\n👉 **可訂！**最晚可唱至 **{hard_stop}**")
                     else:
                         vip_status_msgs.append(f"✅ **【{room_no}】**：{today_info}\n👉 **空閒可訂！**")
@@ -205,7 +206,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 is_vip_conflict = True
                 vip_conflict_msg = "😭 **糟糕！指定的包廂皆已客滿！**\n\n" + "\n\n".join(vip_status_msgs)
         
-        # 🛡️ 一般時段客滿檢查 (確保表單有格子寫)
+        # 🛡️ 一般時段客滿檢查
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -315,7 +316,6 @@ with st.form("booking_form"):
         續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
         卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
         
-        # 📌 【升級】根據包廂選項動態顯示
         if 包廂選項 == "小VIP":
             options = st.session_state.available_vips if st.session_state.available_vips else ["101", "102", "103", "205", "305"]
             實際包廂 = st.selectbox("👉 請選擇要安排哪一間", options)
