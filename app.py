@@ -50,14 +50,14 @@ def apply_recommended_time(new_time):
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
 
 # ==========================================
-# 🎨 網頁視覺美化 (自訂尊爵背景)
+# 🎨 網頁視覺美化 (自訂尊爵背景 - 藍紫漸層高級版)
 # ==========================================
 page_bg_img = '''
 <style>
 /* 控制整個網頁大背景的設定 */
 .stApp {
-    /* 質感漸層色：深藍灰漸變到低調深綠色，KTV 夜生活高級感 */
-    background: linear-gradient(135deg, #0f2027 0%, #203a43 50%, #2c5364 100%);
+    /* 🌟 新增：質感藍紫漸層色，營造高級感與神祕感 🌟 */
+    background: linear-gradient(135deg, #0f172a 0%, #1a2a6c 50%, #3b0764 100%);
     background-size: cover;
     background-attachment: fixed;
 }
