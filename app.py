@@ -2,123 +2,117 @@ import streamlit as st
 import datetime
 import gspread
 import holidays
+import time
+import re
 
-# 網頁標題與圖示設定
+# ==========================================
+# 🛠️ 輔助小工具 (時間計算與時數解析)
+# ==========================================
+def time_to_float(t_str):
+    """把時間轉成數字 (例如 22:00 -> 22.0, 凌晨 02:00 -> 26.0)"""
+    if not t_str or ":" not in t_str: return 0
+    h, m = map(int, t_str.split(":"))
+    if h < 7: h += 24 # 凌晨算在同一天的晚班
+    return h + m/60.0
+
+def float_to_time(f):
+    """把數字轉回時間字串 (例如 28.0 -> 04:00)"""
+    h = int(f)
+    m = int(round((f - h) * 60))
+    if m == 60:
+        h += 1; m = 0
+    if h >= 24: h -= 24
+    return f"{h:02d}:{m:02d}"
+
+def get_duration(amt_str):
+    """從消費金額中自動抓出唱幾小時 (例如 '4099/5H' -> 5)"""
+    match = re.search(r'(\d+)\s*[Hh]', str(amt_str))
+    if match: return int(match.group(1))
+    return 3 # 如果沒打 H，系統預設以 3 小時計算防撞
+
+# ==========================================
+# 網頁基礎設定與防連點機制
+# ==========================================
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
 st.title("🎤 賓士府前店 - 快速訂位系統")
 
-# 建立一個表單介面 (這樣才不會打一個字系統就重跑一次)
-with st.form("booking_form"):
-    st.markdown("### 📋 訂位資料填寫")
-    執行動作 = st.radio("請選擇執行動作：", ["🔍 查詢空位", "📝 直接訂位"], horizontal=True)
+# 初始化 Session State (用來記住查詢結果跟防止連點)
+if "last_submit" not in st.session_state:
+    st.session_state.last_submit = 0
+if "check_msg" not in st.session_state:
+    st.session_state.check_msg = None
+if "check_status" not in st.session_state:
+    st.session_state.check_status = None
+
+# ==========================================
+# ❶ 第一階段：查詢時段與包廂
+# ==========================================
+st.markdown("### ❶ 確認時段與包廂")
+colA, colB, colC = st.columns(3)
+with colA:
+    日期 = st.date_input("選擇日期", datetime.date.today())
+with colB:
+    時間 = st.text_input("時間 (例如 1800)", value="1800")
+with colC:
+    # 加入了你指定的 VIP 包廂列表
+    包廂 = st.selectbox("指定VIP包廂", ["不指定", "101", "102", "103", "205", "305", "317"])
+
+# 當按下查詢按鈕時
+if st.button("🔍 檢查空位與包廂", use_container_width=True):
+    st.info("🔄 系統查詢中，請稍候...")
     
-    # 用雙欄位排版，讓網頁看起來更專業
-    col1, col2 = st.columns(2)
-    with col1:
-        日期 = st.date_input("選擇日期", datetime.date.today())
-        時間 = st.text_input("時間 (例如 1800 或 18:20)", value="1800")
-        人數 = st.text_input("人數", placeholder="例如：4")
-        聯絡電話 = st.text_input("聯絡電話", placeholder="例如：0912345678")
-        續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
+    # 時間格式防呆
+    if len(時間) == 4 and ":" not in 時間:
+        時間 = 時間[:2] + ":" + 時間[2:]
         
-    with col2:
-        姓名 = st.text_input("姓名", placeholder="例如：王大明")
-        消費金額 = st.text_input("消費金額", placeholder="例如：1000/3H")
-        卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
-        接洽人 = st.text_input("接洽人", placeholder="例如：小薇")
-        備註 = st.text_input("備註 (沒有可留白)", placeholder="例如：可換/未匯訂")
+    hour = int(時間.split(":")[0])
+    if 7 <= hour < 17: 班別 = "早班"
+    elif 17 <= hour <= 23: 班別 = "中班"
+    else: 班別 = "晚班" 
 
-    # 送出按鈕
-    submitted = st.form_submit_button("🚀 送出執行")
+    weekdays_chinese = ["一", "二", "三", "四", "五", "六", "日"]
+    file_date_str = f"{日期.month}/{日期.day}({weekdays_chinese[日期.weekday()]})"
+    file_name = file_date_str + "訂位表"
 
-# ==========================================
-# 只要按下「送出」按鈕，就會開始執行下面的引擎
-# ==========================================
-if submitted:
-    st.divider() # 畫一條分隔線
-    st.info("🔄 系統處理中，請稍候...")
-    
     try:
-        # --- 處理時間格式 ---
-        if len(時間) == 4 and ":" not in 時間:
-            時間 = 時間[:2] + ":" + 時間[2:]
-            
-        hour = int(時間.split(":")[0])
-        if 7 <= hour < 17:
-            班別 = "早班"
-        elif 17 <= hour <= 23:
-            班別 = "中班"
-        else:
-            班別 = "晚班" 
-            
-        # --- 🛡️ 30 天訂位限制雷達 ---
-        tw_now = datetime.datetime.now() + datetime.timedelta(hours=8)
-        today = tw_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        # st.date_input 產生的日期本來就是 date 格式，所以直接拿來算
-        diff_days = (日期 - today.date()).days
-        
-        if diff_days > 30:
-            st.error(f"🚫 **系統阻擋：這筆訂位是 {diff_days} 天後！**\n\n💡 提醒：店內規定只開放 30 天內的訂位喔！請重選日期。")
-            st.stop() # 讓程式立刻停在這裡
-
-        weekdays_chinese = ["一", "二", "三", "四", "五", "六", "日"]
-        weekday_str = weekdays_chinese[日期.weekday()]
-        file_date_str = f"{日期.month}/{日期.day}({weekday_str})"
-        file_name = file_date_str + "訂位表"
-
-        # --- 💰 台灣國定假日計費雷達 ---
-        tw_holidays = holidays.TW()
-        tomorrow = 日期 + datetime.timedelta(days=1)
-        
-        is_today_holiday = 日期 in tw_holidays
-        is_tomorrow_holiday = tomorrow in tw_holidays
-        is_tomorrow_weekend = tomorrow.weekday() >= 5 
-        
-        if is_today_holiday:
-            holiday_name = tw_holidays.get(日期)
-            if not is_tomorrow_holiday and not is_tomorrow_weekend:
-                st.warning(f"💰 **計費提醒：【{holiday_name} 最後一天】🚨 全日比照週日消費！**")
-            else:
-                st.warning(f"💰 **計費提醒：【{holiday_name} 連假】🚨 全日比照週六消費！**")
-        elif is_tomorrow_holiday:
-            holiday_name = tw_holidays.get(tomorrow)
-            if hour >= 17:
-                st.warning(f"💰 **計費提醒：【{holiday_name} 前夕】🚨 17:00 後比照週五消費！**")
-            else:
-                st.warning(f"💰 **計費提醒：【{holiday_name} 前夕】白天仍為平日，17:00後比照週五！**")
-        elif weekday_str == "五" and hour >= 17:
-            st.warning("💰 **計費提醒：【週五小週末】🚨 17:00 後比照週末消費！**")
-        elif weekday_str == "六":
-            st.warning("💰 **計費提醒：【週末】🚨 全日為週末消費！**")
-        elif weekday_str == "日":
-            if hour < 17:
-                st.warning("💰 **計費提醒：【週日白天】🚨 16:59 前為週末消費！**")
-            else:
-                st.info("💰 計費提醒：【週日晚上】目前為平日消費時段。")
-        else:
-            st.info("💰 計費提醒：目前為平日消費時段。")
-
-        # --- 🔑 登入 Google 雲端 (使用 Streamlit 機密金鑰) ---
-        # 這裡的寫法跟 Colab 不一樣囉！它是靠我們之後要在後台貼上的 JSON 金鑰來登入
+        # 連線雲端讀取資料
         gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        sheet = gc.open(file_name).worksheet(班別)
+        data = sheet.get_all_values()
         
-        # --- 開啟表單 ---
-        try:
-            sheet = gc.open(file_name).worksheet(班別)
-            data = sheet.get_all_values()
-        except gspread.exceptions.SpreadsheetNotFound:
-            st.error(f"❌ **找不到檔案：** 雲端硬碟裡沒有叫做「{file_name}」的檔案！\n\n(如果這是未來的日期，請確認店長已經新增了該日期的訂位表，並共用給機器人喔！)")
-            st.stop()
-        except gspread.exceptions.WorksheetNotFound:
-            st.error(f"❌ **找不到分頁：** 檔案「{file_name}」裡面沒有叫做「{班別}」的分頁！")
-            st.stop()
+        is_vip_conflict = False
+        vip_conflict_msg = ""
         
+        # --- 🛡️ 智能演算法：VIP 包廂防撞與推薦 ---
+        if 包廂 != "不指定":
+            req_start = time_to_float(時間)
+            req_end = req_start + 3 # 預設新客人至少唱 3H 來看衝突
+            
+            for r in data:
+                # 假設包廂寫在 L 欄 (Index 11)
+                if len(r) > 11 and r[11] == 包廂:
+                    b_time = r[2]
+                    b_name = r[3]
+                    b_amt = r[5] if len(r) > 5 else ""
+                    
+                    b_dur = get_duration(b_amt)
+                    b_start = time_to_float(b_time)
+                    b_end = b_start + b_dur
+                    
+                    # 衝突判斷：只要時間有重疊 (外加 1 小時清包廂緩衝)
+                    if req_end + 1 > b_start and req_start < b_end + 1:
+                        is_vip_conflict = True
+                        rec_before = float_to_time(b_start - 1)
+                        rec_after = float_to_time(b_end + 1)
+                        vip_conflict_msg = f"⚠️ **【VIP {包廂}】已被預訂！**\n👉 於 **{b_time}** 已被「**{b_name}**」預訂 (預計唱 {b_dur}H)。\n\n💡 智能推薦：\n⬆️ 往前最晚需於 **{rec_before}** 前清空包廂\n⬇️ 往後最快需等 **{rec_after}** 才有空"
+                        break
+        
+        # --- 🛡️ 一般時段客滿檢查 ---
         target_row_number = -1
-        is_booked = False
-        requested_index = -1 
-        booked_names = [] 
+        is_time_full = False
+        booked_names = []
+        requested_index = -1
         
-        # --- 尋找空位與合併儲存格邏輯 ---
         for index, row in enumerate(data):
             if len(row) > 3 and row[2] == 時間:
                 requested_index = index
@@ -129,8 +123,7 @@ if submitted:
                     check_idx = index + 1
                     while check_idx < len(data):
                         next_row = data[check_idx]
-                        if len(next_row) > 3 and next_row[2] != "":
-                            break
+                        if len(next_row) > 3 and next_row[2] != "": break
                         if len(next_row) > 3 and next_row[2] == "":
                             if len(next_row) > 3 and next_row[3] == "": 
                                 target_row_number = check_idx + 1
@@ -140,60 +133,122 @@ if submitted:
                         check_idx += 1
                     
                     if target_row_number == -1:
-                        is_booked = True
-                        booked_by = "、".join(booked_names)
+                        is_time_full = True
+                break
+                
+        # 產生查詢結果訊息
+        if is_vip_conflict:
+            st.session_state.check_status = "error"
+            st.session_state.check_msg = vip_conflict_msg
+        elif is_time_full:
+            booked_by = "、".join(booked_names)
+            msg = f"⚠️ 糟糕！【{時間}】的一般包廂已經被「{booked_by}」全數訂滿了！\n\n💡 系統尋找最接近空位："
+            # 尋找候補
+            n_before, n_after = None, None
+            for i in range(requested_index - 1, -1, -1):
+                if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "":
+                    n_before = data[i][2]; break
+            for i in range(requested_index + 1, len(data)):
+                if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "": 
+                    n_after = data[i][2]; break
+                    
+            if n_before: msg += f"\n⬆️ 往前最快：【{n_before}】"
+            if n_after: msg += f"\n⬇️ 往後最快：【{n_after}】"
+            st.session_state.check_status = "warning"
+            st.session_state.check_msg = msg
+        elif target_row_number != -1:
+            st.session_state.check_status = "success"
+            st.session_state.check_msg = f"✅ **【{時間}】目前還有位子！** 您可以繼續填寫下方資料完成訂位。"
+        else:
+            st.session_state.check_status = "warning"
+            st.session_state.check_msg = f"❓ 找不到 {時間} 這個時間格子。"
+
+    except Exception as e:
+        st.error(f"❌ 查詢失敗 (請確認該日期檔案已建立)：{e}")
+
+# 顯示查詢結果
+if st.session_state.check_msg:
+    if st.session_state.check_status == "success": st.success(st.session_state.check_msg)
+    elif st.session_state.check_status == "warning": st.warning(st.session_state.check_msg)
+    else: st.error(st.session_state.check_msg)
+
+st.divider()
+
+# ==========================================
+# ❷ 第二階段：填寫客資與送出 (包含 3 秒防連點)
+# ==========================================
+st.markdown("### ❷ 填寫客資並送出")
+with st.form("booking_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        姓名 = st.text_input("姓名", placeholder="例如：王大明")
+        聯絡電話 = st.text_input("聯絡電話", placeholder="例如：0912345678")
+        續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
+        卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
+    with col2:
+        人數 = st.text_input("人數", placeholder="例如：4")
+        消費金額 = st.text_input("消費金額 (請包含時數)", placeholder="例如：4099/5H")
+        接洽人 = st.text_input("接洽人", placeholder="例如：小薇")
+        備註 = st.text_input("備註 (沒有可留白)", placeholder="例如：可換/未匯訂")
+
+    submitted = st.form_submit_button("🚀 確認送出訂位", use_container_width=True)
+
+if submitted:
+    # --- 🛡️ 3秒防連點機制 ---
+    current_time = time.time()
+    if current_time - st.session_state.last_submit < 3:
+        st.error("⏳ 系統處理中，請勿連續點擊！（防重複訂位機制已啟動）")
+        st.stop()
+    st.session_state.last_submit = current_time
+
+    if 姓名 == "":
+        st.error("❌ 訂位失敗：請輸入客人「姓名」喔！")
+        st.stop()
+
+    st.info("🔄 正在寫入雲端表單，請稍候...")
+    try:
+        if len(時間) == 4 and ":" not in 時間: 時間 = 時間[:2] + ":" + 時間[2:]
+        hour = int(時間.split(":")[0])
+        if 7 <= hour < 17: 班別 = "早班"
+        elif 17 <= hour <= 23: 班別 = "中班"
+        else: 班別 = "晚班" 
+
+        weekdays_chinese = ["一", "二", "三", "四", "五", "六", "日"]
+        file_date_str = f"{日期.month}/{日期.day}({weekdays_chinese[日期.weekday()]})"
+        file_name = file_date_str + "訂位表"
+
+        gc = gspread.service_account_from_dict(st.secrets["gcp_service_account"])
+        sheet = gc.open(file_name).worksheet(班別)
+        data = sheet.get_all_values()
+        
+        # 尋找空位寫入 (再找一次確保這幾秒內沒被別人訂走)
+        target_row_number = -1
+        for index, row in enumerate(data):
+            if len(row) > 3 and row[2] == 時間:
+                if row[3] == "": 
+                    target_row_number = index + 1 
+                else:
+                    check_idx = index + 1
+                    while check_idx < len(data):
+                        next_row = data[check_idx]
+                        if len(next_row) > 3 and next_row[2] != "": break
+                        if len(next_row) > 3 and next_row[2] == "":
+                            if len(next_row) > 3 and next_row[3] == "": 
+                                target_row_number = check_idx + 1
+                                break
+                        check_idx += 1
                 break 
 
-        # --- 執行動作判斷 ---
-        if 執行動作 == "🔍 查詢空位":
-            st.write(f"🔍 正在為您查詢：**{file_date_str} {班別} {時間}**")
-            if target_row_number != -1:
-                st.success(f"✅ **【{時間}】目前還有空包廂！** 您可以切換為「📝 直接訂位」輸入客人資料了。")
-            elif is_booked:
-                st.error(f"⚠️ 糟糕！【{時間}】的包廂已經被「{booked_by}」全數訂滿了！")
-            else:
-                st.warning(f"❓ 找不到 {時間} 這個時間格子。")
-                
-        elif 執行動作 == "📝 直接訂位":
-            if 姓名 == "":
-                st.error("❌ 訂位失敗：請輸入客人「姓名」喔！")
-            elif target_row_number != -1:
-                cell_range = f"D{target_row_number}:K{target_row_number}"
-                update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註]]
-                sheet.update(range_name=cell_range, values=update_values)
-                st.success(f"🎉 **訂位成功！**\n\n👉 **【{file_date_str} {班別} {時間}】** 已為「**{姓名}**」保留包廂。")
-                st.balloons() # 成功的話，網頁會噴出氣球特效！🎈
-            elif is_booked:
-                st.error(f"⚠️ 糟糕！【{時間}】的包廂已經被「{booked_by}」全數訂滿了！無法寫入。")
-            else:
-                st.warning(f"❓ 找不到 {時間} 這個時間格子。")
+        if target_row_number != -1:
+            # 範圍涵蓋 D(姓名)一路到 L(包廂)
+            cell_range = f"D{target_row_number}:L{target_row_number}"
+            # 依序寫入：姓名, 人數, 金額, 電話, 卡號, 接洽人, 續時, 備註, [新增的]包廂！
+            update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註, 包廂 if 包廂 != "不指定" else ""]]
+            sheet.update(range_name=cell_range, values=update_values)
+            st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{時間}** 的包廂。")
+            st.balloons()
+        else:
+            st.error(f"⚠️ 糟糕！您填寫資料的這段期間，【{時間}】的空位被搶走或有衝突了！請重新查詢。")
 
-        # --- 候補推薦系統 ---
-        if is_booked:
-            st.markdown("### 💡 系統為您尋找最接近的空位：")
-            nearest_before = None
-            nearest_after = None
-            
-            for i in range(requested_index - 1, -1, -1):
-                row = data[i]
-                if len(row) > 3 and ":" in row[2] and row[3] == "":
-                    nearest_before = row[2]
-                    break
-                        
-            for i in range(requested_index + 1, len(data)):
-                row = data[i]
-                if len(row) > 3 and ":" in row[2] and row[3] == "": 
-                    nearest_after = row[2]
-                    break
-                        
-            if nearest_before: 
-                st.write(f"⬆️ 往前最快：**【{nearest_before}】**還有空位")
-            if nearest_after: 
-                st.write(f"⬇️ 往後最快：**【{nearest_after}】**還有空位")
-            if not nearest_before and not nearest_after: 
-                st.write("😭 抱歉，這個班別已經全滿了！")
-
-    except ValueError:
-        st.error("❌ 發生錯誤：請確定時間格式有打對（例如 1800 或 18:00）")
     except Exception as e:
-        st.error(f"❌ 發生未知的錯誤，詳細原因：{e}")
+        st.error(f"❌ 發生未知的錯誤：{e}")
