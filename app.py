@@ -55,7 +55,6 @@ if "rec_before" not in st.session_state:
     st.session_state.rec_before = None
 if "rec_after" not in st.session_state:
     st.session_state.rec_after = None
-# 【新增】記錄目前有空的 VIP 包廂清單
 if "available_vips" not in st.session_state:
     st.session_state.available_vips = []
 
@@ -69,7 +68,6 @@ with colA:
 with colB:
     時間 = st.text_input("時間 (例如 1800)", key="input_time")
 with colC:
-    # 【修改】下拉式選單改為群組模式
     包廂 = st.selectbox("指定VIP包廂", ["不指定", "小VIP", "大VIP(317)"])
 
 # --- 🔍 查詢按鈕 ---
@@ -77,7 +75,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
     st.info("🔄 系統查詢中，請稍候...")
     st.session_state.rec_before = None
     st.session_state.rec_after = None
-    st.session_state.available_vips = [] # 每次查詢先清空
+    st.session_state.available_vips = [] 
     
     if len(時間) == 4 and ":" not in 時間:
         時間 = 時間[:2] + ":" + 時間[2:]
@@ -100,7 +98,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         vip_conflict_msg = ""
         
         # ==========================================
-        # 🛡️ 【上帝視角】VIP 包廂群組掃描防撞
+        # 🛡️ 【升級版雙鏡頭】VIP 包廂群組掃描防撞
         # ==========================================
         if 包廂 != "不指定":
             target_rooms = ["101", "102", "103", "205", "305"] if 包廂 == "小VIP" else ["317"]
@@ -117,7 +115,11 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 c_details = []
 
                 for r in data:
-                    if len(r) > 11 and r[11] == room_no:
+                    # 左右開弓：同時檢查 B欄(索引1) 和 L欄(索引11)，並消除空白建干擾
+                    val_B = str(r[1]).strip() if len(r) > 1 else ""
+                    val_L = str(r[11]).strip() if len(r) > 11 else ""
+                    
+                    if room_no in val_B or room_no in val_L:
                         b_time = r[2]
                         b_dur = get_duration(r[5] if len(r) > 5 else "")
                         b_start = time_to_float(b_time)
@@ -138,7 +140,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
 
             st.session_state.available_vips = avail_vips
 
-            # 只要還有任何一間空著，就不算衝突！
             if len(avail_vips) > 0:
                 is_vip_conflict = False
                 vip_conflict_msg = "🎉 **查詢結果：有空包廂！**\n\n" + "\n\n".join(vip_status_msgs)
@@ -146,7 +147,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 is_vip_conflict = True
                 vip_conflict_msg = "😭 **糟糕！該時段的VIP包廂皆已客滿！**\n\n" + "\n\n".join(vip_status_msgs)
         
-        # 🛡️ 一般時段客滿檢查 (即使VIP有空，也要確認表單有沒有格子可以寫)
+        # 🛡️ 一般時段客滿檢查
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -175,7 +176,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         is_time_full = True
                 break
                 
-        # 產生存檔結果 (整合 VIP 與一般格子狀態)
+        # 產生存檔結果 
         if 包廂 != "不指定":
             if is_vip_conflict:
                 st.session_state.check_status = "error"
@@ -218,7 +219,6 @@ if st.session_state.check_msg:
     else: 
         st.error(st.session_state.check_msg)
 
-    # 一般空位的魔法按鈕
     if st.session_state.rec_before or st.session_state.rec_after:
         st.markdown("💡 **系統為您尋找最接近空位，請點擊按鈕直接帶入：**")
         col_btn1, col_btn2 = st.columns(2)
@@ -258,9 +258,7 @@ with st.form("booking_form"):
         續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
         卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
         
-        # 【新增】動態包廂選擇器
         if 包廂 == "小VIP":
-            # 如果查詢過有空位，就只顯示有空的；如果還沒查，就顯示全部
             options = st.session_state.available_vips if st.session_state.available_vips else ["101", "102", "103", "205", "305"]
             實際包廂 = st.selectbox("👉 請選擇要安排哪一間", options)
         elif 包廂 == "大VIP(317)":
@@ -319,7 +317,6 @@ if submitted:
 
         if target_row_number != -1:
             cell_range = f"D{target_row_number}:L{target_row_number}"
-            # 【修改】寫入表單時，寫入的是最後決定的「實際包廂」
             update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註, 實際包廂]]
             sheet.update(range_name=cell_range, values=update_values)
             st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的包廂。")
