@@ -97,9 +97,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         is_vip_conflict = False
         vip_conflict_msg = ""
         
-        # ==========================================
-        # 🛡️ 【升級版雙鏡頭】VIP 包廂群組掃描防撞
-        # ==========================================
         if 包廂 != "不指定":
             target_rooms = ["101", "102", "103", "205", "305"] if 包廂 == "小VIP" else ["317"]
             req_start = time_to_float(時間)
@@ -115,7 +112,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 c_details = []
 
                 for r in data:
-                    # 左右開弓：同時檢查 B欄(索引1) 和 L欄(索引11)，並消除空白建干擾
                     val_B = str(r[1]).strip() if len(r) > 1 else ""
                     val_L = str(r[11]).strip() if len(r) > 11 else ""
                     
@@ -125,7 +121,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         b_start = time_to_float(b_time)
                         b_end = b_start + b_dur
                         
-                        # 碰撞計算 (含 1H 清包廂時間)
                         if req_end + 1 > b_start and req_start < b_end + 1:
                             room_conflict = True
                             rec_before = float_to_time(b_start - 1)
@@ -136,7 +131,7 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                     avail_vips.append(room_no)
                     vip_status_msgs.append(f"✅ **【{room_no}】**：空閒可訂！")
                 else:
-                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{ '、'.join(c_details) } 👉 需改為 **{rec_before}前** 或 **{rec_after}後**")
+                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{ '、'.join(c_details) } 👉 往前最晚只能唱到 **{rec_before}**，或改訂 **{rec_after}** 之後")
 
             st.session_state.available_vips = avail_vips
 
@@ -147,7 +142,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 is_vip_conflict = True
                 vip_conflict_msg = "😭 **糟糕！該時段的VIP包廂皆已客滿！**\n\n" + "\n\n".join(vip_status_msgs)
         
-        # 🛡️ 一般時段客滿檢查
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -176,7 +170,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         is_time_full = True
                 break
                 
-        # 產生存檔結果 
         if 包廂 != "不指定":
             if is_vip_conflict:
                 st.session_state.check_status = "error"
@@ -253,7 +246,7 @@ with st.form("booking_form"):
         姓名 = st.text_input("姓名", placeholder="例如：王大明")
         聯絡電話 = st.text_input("聯絡電話", placeholder="例如：0912345678")
     with col2:
-        接洽人 = st.text_input("接洽人", placeholder="例如：軒3/2")
+        接洽人 = st.text_input("接洽人", placeholder="例如：軒")
         備註 = st.text_input("備註 (沒有可留白)", placeholder="例如：可換/未匯訂")
         續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
         卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
@@ -316,8 +309,13 @@ if submitted:
                 break 
 
         if target_row_number != -1:
+            # 🕒 【新增】動態抓取台灣當天日期，並與輸入的接洽人合併
+            tw_now = datetime.datetime.now() + datetime.timedelta(hours=8)
+            # 如果接洽人有打字（例如「軒」），就幫他加上日期（例如「軒3/3」）；如果沒打字就留白
+            接洽人_寫入 = f"{接洽人}{tw_now.month}/{tw_now.day}" if 接洽人.strip() != "" else ""
+
             cell_range = f"D{target_row_number}:L{target_row_number}"
-            update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註, 實際包廂]]
+            update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人_寫入, 續時, 備註, 實際包廂]]
             sheet.update(range_name=cell_range, values=update_values)
             st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的包廂。")
             st.balloons()
