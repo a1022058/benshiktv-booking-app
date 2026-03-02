@@ -211,15 +211,15 @@ st.markdown("### ❷ 填寫客資並送出")
 with st.form("booking_form"):
     col1, col2 = st.columns(2)
     with col1:
-        姓名 = st.text_input("姓名", placeholder="例如：王大明")
-        聯絡電話 = st.text_input("聯絡電話", placeholder="例如：0912345678")
-        續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
-        卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
-    with col2:
         人數 = st.text_input("人數", placeholder="例如：4")
         消費金額 = st.text_input("消費金額 (請包含時數)", placeholder="例如：4099/5H")
+        姓名 = st.text_input("姓名", placeholder="例如：王大明")
+        聯絡電話 = st.text_input("聯絡電話", placeholder="例如：0912345678")
+    with col2:
         接洽人 = st.text_input("接洽人", placeholder="例如：小薇")
         備註 = st.text_input("備註 (沒有可留白)", placeholder="例如：可換/未匯訂")
+        續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
+        卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
 
     submitted = st.form_submit_button("🚀 確認送出訂位", use_container_width=True)
 
