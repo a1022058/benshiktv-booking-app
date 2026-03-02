@@ -104,19 +104,16 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         is_vip_conflict = False
         vip_conflict_msg = ""
         
-        # ==========================================
-        # 🛡️ 【動態緩衝時間版】支援VIP 1H / 一般包廂 0.5H
-        # ==========================================
         if 包廂選項 != "不指定":
             if 包廂選項 == "小VIP":
                 target_rooms = ["101", "102", "103", "205", "305"]
-                buffer_time = 1.0  # VIP預留 1 小時
+                buffer_time = 1.0  
             elif 包廂選項 == "大VIP(317)":
                 target_rooms = ["317"]
-                buffer_time = 1.0  # VIP預留 1 小時
+                buffer_time = 1.0  
             elif 包廂選項 == "指定其他包廂":
                 target_rooms = [自訂包廂號碼.strip()]
-                buffer_time = 0.5  # 一般包廂只要預留半小時(30分鐘)！
+                buffer_time = 0.5  
                 
             req_start = time_to_float(時間)
             
@@ -206,7 +203,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                 is_vip_conflict = True
                 vip_conflict_msg = "😭 **糟糕！指定的包廂皆已客滿！**\n\n" + "\n\n".join(vip_status_msgs)
         
-        # 🛡️ 一般時段客滿檢查
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -235,7 +231,6 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         is_time_full = True
                 break
                 
-        # 產生存檔結果 
         if 包廂選項 != "不指定":
             if is_vip_conflict:
                 st.session_state.check_status = "error"
@@ -329,6 +324,9 @@ with st.form("booking_form"):
         else:
             實際包廂 = ""
 
+    # 📌 【新增】指定包廂打勾區塊
+    是否指定包廂 = st.checkbox("🎯 標記為『指定包廂』 (打勾後會在表單包廂號碼前加上『指』字防誤刪)")
+
     submitted = st.form_submit_button("🚀 確認送出訂位", use_container_width=True)
 
 if submitted:
@@ -386,10 +384,37 @@ if submitted:
             update_values_data = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人_寫入, 續時, 備註]]
             sheet.update(range_name=cell_range_data, values=update_values_data)
             
+            # 📌 處理包廂寫入邏輯
+            實際包廂_寫入 = 實際包廂
             if 實際包廂 != "":
-                sheet.update(range_name=f"B{target_row_number}", values=[[實際包廂]])
+                # 如果有打勾，就幫他在前面加上「指」字
+                if 是否指定包廂:
+                    實際包廂_寫入 = f"指{實際包廂}"
+                sheet.update(range_name=f"B{target_row_number}", values=[[實際包廂_寫入]])
+                
+                # 📌 處理 VIP 底色自動上色機制 (#00FF00 = 綠色)
+                try:
+                    if 包廂選項 in ["小VIP", "大VIP(317)"]:
+                        sheet.format(f"B{target_row_number}", {
+                            "backgroundColor": {
+                                "red": 0.0,
+                                "green": 1.0,
+                                "blue": 0.0
+                            }
+                        })
+                    else:
+                        # 如果是一般包廂，確保底色是乾淨的白色
+                        sheet.format(f"B{target_row_number}", {
+                            "backgroundColor": {
+                                "red": 1.0,
+                                "green": 1.0,
+                                "blue": 1.0
+                            }
+                        })
+                except Exception:
+                    pass # 如果改變格式失敗，也不要影響訂位流程
 
-            st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的 **{實際包廂 if 實際包廂 else '一般'}** 包廂。")
+            st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的 **{實際包廂_寫入 if 實際包廂_寫入 else '一般'}** 包廂。")
             st.balloons()
             
             st.session_state.check_msg = None
