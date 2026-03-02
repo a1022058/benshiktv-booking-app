@@ -482,7 +482,7 @@ if submitted:
             show_success_modal(file_date_str, 確認時間, 姓名, 人數, 聯絡電話, 消費金額)
             
         else:
-            st.error(f"⚠️ 糟糕！您填寫資料的這段期間，【{確認時間}】的空位被搶走或有衝突了！請重新查詢。")
+            st.error(f"⚠️寫入失敗！包廂有空，但 Google 訂位表上【{確認時間}】的『格子已經滿了』寫不下了！\n\n💡 解決方法：請改選前後 10 分鐘的空檔送出，或前往 Google 表單手動插入空白行。")
 
     except Exception as e:
         st.error(f"❌ 發生未知的錯誤：{e}")
