@@ -49,9 +49,7 @@ def apply_recommended_time(new_time):
 # ==========================================
 @st.dialog("🎉 訂位成功！")
 def show_success_modal(date_str, time_str, name, people, phone, amount):
-    # 提醒標語
     st.error("🔔 **記得跟客人確定訂位時間**\n\n🚨 **並且提醒包廂保留十分鐘 逾時取消**", icon="⚠️")
-    # 訂位明細
     st.markdown(f"""
     * **時間:** {date_str} {time_str}
     * **姓名:** {name}
@@ -59,7 +57,6 @@ def show_success_modal(date_str, time_str, name, people, phone, amount):
     * **手機號碼:** {phone}
     * **消費金額:** {amount}
     """)
-    # 關閉按鈕，按下後網頁自動重整迎接下一位客人
     if st.button("✅ 確認並關閉", use_container_width=True):
         st.rerun()
 
@@ -122,7 +119,6 @@ if "available_vips" not in st.session_state:
 st.markdown("### ❶ 確認時段與包廂")
 colA, colB, colC = st.columns(3)
 
-# 📌 【升級】自動抓取「台灣時間」的今天日期
 tw_today = (datetime.datetime.now() + datetime.timedelta(hours=8)).date()
 
 with colA:
@@ -365,7 +361,9 @@ st.divider()
 # ❷ 第二階段：填寫客資與送出 
 # ==========================================
 st.markdown("### ❷ 填寫客資並送出")
-with st.form("booking_form"):
+
+# 📌 【關鍵升級】加入了 clear_on_submit=True，送出後會自動把這區塊的所有格子清空！
+with st.form("booking_form", clear_on_submit=True):
     col1, col2 = st.columns(2)
     with col1:
         人數 = st.text_input("人數", placeholder="例如：4")
@@ -403,7 +401,7 @@ if submitted:
     st.session_state.last_submit = current_time
 
     if 姓名 == "":
-        st.error("❌ 訂位失敗：請輸入客人「姓名」喔！")
+        st.error("❌ 訂位失敗：請輸入客人「姓名」喔！(請重新填寫送出)")
         st.stop()
 
     st.info("🔄 正在寫入雲端表單，請稍候...")
@@ -477,11 +475,10 @@ if submitted:
                     pass 
 
             st.balloons()
-            
             st.session_state.check_msg = None
             st.session_state.check_status = None
             
-            # 📌 【觸發】呼叫訂位成功浮動視窗！
+            # 觸發浮動視窗
             show_success_modal(file_date_str, 確認時間, 姓名, 人數, 聯絡電話, 消費金額)
             
         else:
