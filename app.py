@@ -45,6 +45,25 @@ def apply_recommended_time(new_time):
     st.session_state.rec_after = None
 
 # ==========================================
+# 🎯 訂位成功浮動視窗 (Modal Pop-up)
+# ==========================================
+@st.dialog("🎉 訂位成功！")
+def show_success_modal(date_str, time_str, name, people, phone, amount):
+    # 提醒標語
+    st.error("🔔 **記得跟客人確定訂位時間**\n\n🚨 **並且提醒包廂保留十分鐘 逾時取消**", icon="⚠️")
+    # 訂位明細
+    st.markdown(f"""
+    * **時間:** {date_str} {time_str}
+    * **姓名:** {name}
+    * **人數:** {people}
+    * **手機號碼:** {phone}
+    * **消費金額:** {amount}
+    """)
+    # 關閉按鈕，按下後網頁自動重整迎接下一位客人
+    if st.button("✅ 確認並關閉", use_container_width=True):
+        st.rerun()
+
+# ==========================================
 # 網頁基礎設定與 Session State 狀態記憶
 # ==========================================
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
@@ -54,15 +73,11 @@ st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤"
 # ==========================================
 page_bg_img = '''
 <style>
-/* 控制整個網頁大背景的設定 */
 .stApp {
-    /* 🌟 新增：質感藍紫漸層色，營造高級感與神祕感 🌟 */
     background: linear-gradient(135deg, #0f172a 0%, #1a2a6c 50%, #3b0764 100%);
     background-size: cover;
     background-attachment: fixed;
 }
-
-/* 調整主標題顏色讓它在深色背景更清楚 */
 h1 {
     color: #ffffff !important;
     text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
@@ -70,8 +85,6 @@ h1 {
 h3 {
     color: #e0e0e0 !important;
 }
-
-/* 幫下方表單輸入區加上半透明的毛玻璃效果 */
 div[data-testid="stForm"] {
     background-color: rgba(255, 255, 255, 0.08);
     border-radius: 15px;
@@ -79,8 +92,6 @@ div[data-testid="stForm"] {
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.15);
 }
-
-/* 讓一般文字也稍微亮一點 */
 p, label, .stCheckbox label {
     color: #f0f0f0 !important;
 }
@@ -110,8 +121,12 @@ if "available_vips" not in st.session_state:
 # ==========================================
 st.markdown("### ❶ 確認時段與包廂")
 colA, colB, colC = st.columns(3)
+
+# 📌 【升級】自動抓取「台灣時間」的今天日期
+tw_today = (datetime.datetime.now() + datetime.timedelta(hours=8)).date()
+
 with colA:
-    日期 = st.date_input("選擇日期", datetime.date.today())
+    日期 = st.date_input("選擇日期", tw_today)
 with colB:
     時間 = st.text_input("時間 (例如 1800)", key="input_time")
 with colC:
@@ -461,11 +476,14 @@ if submitted:
                 except Exception:
                     pass 
 
-            st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的 **{實際包廂_寫入 if 實際包廂_寫入 else '一般'}** 包廂。")
             st.balloons()
             
             st.session_state.check_msg = None
             st.session_state.check_status = None
+            
+            # 📌 【觸發】呼叫訂位成功浮動視窗！
+            show_success_modal(file_date_str, 確認時間, 姓名, 人數, 聯絡電話, 消費金額)
+            
         else:
             st.error(f"⚠️ 糟糕！您填寫資料的這段期間，【{確認時間}】的空位被搶走或有衝突了！請重新查詢。")
 
