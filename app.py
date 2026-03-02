@@ -29,7 +29,6 @@ def get_duration(amt_str):
 
 # ==========================================
 # 🎯 魔法按鈕專屬動作 (Callback)
-# 告訴系統：在重新載入網頁前，先幫我偷改時間！
 # ==========================================
 def apply_recommended_time(new_time):
     st.session_state.input_time = new_time.replace(":", "")
@@ -56,6 +55,9 @@ if "rec_before" not in st.session_state:
     st.session_state.rec_before = None
 if "rec_after" not in st.session_state:
     st.session_state.rec_after = None
+# 【新增】記錄目前有空的 VIP 包廂清單
+if "available_vips" not in st.session_state:
+    st.session_state.available_vips = []
 
 # ==========================================
 # ❶ 第一階段：查詢時段與包廂
@@ -67,13 +69,15 @@ with colA:
 with colB:
     時間 = st.text_input("時間 (例如 1800)", key="input_time")
 with colC:
-    包廂 = st.selectbox("指定VIP包廂", ["不指定", "101", "102", "103", "205", "305", "317"])
+    # 【修改】下拉式選單改為群組模式
+    包廂 = st.selectbox("指定VIP包廂", ["不指定", "小VIP", "大VIP(317)"])
 
 # --- 🔍 查詢按鈕 ---
 if st.button("🔍 檢查空位與包廂", use_container_width=True):
     st.info("🔄 系統查詢中，請稍候...")
     st.session_state.rec_before = None
     st.session_state.rec_after = None
+    st.session_state.available_vips = [] # 每次查詢先清空
     
     if len(時間) == 4 and ":" not in 時間:
         時間 = 時間[:2] + ":" + 時間[2:]
@@ -95,29 +99,54 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
         is_vip_conflict = False
         vip_conflict_msg = ""
         
-        # 🛡️ VIP 包廂防撞
+        # ==========================================
+        # 🛡️ 【上帝視角】VIP 包廂群組掃描防撞
+        # ==========================================
         if 包廂 != "不指定":
+            target_rooms = ["101", "102", "103", "205", "305"] if 包廂 == "小VIP" else ["317"]
             req_start = time_to_float(時間)
             req_end = req_start + 3 
             
-            for r in data:
-                if len(r) > 11 and r[11] == 包廂:
-                    b_time = r[2]
-                    b_name = r[3]
-                    b_amt = r[5] if len(r) > 5 else ""
-                    
-                    b_dur = get_duration(b_amt)
-                    b_start = time_to_float(b_time)
-                    b_end = b_start + b_dur
-                    
-                    if req_end + 1 > b_start and req_start < b_end + 1:
-                        is_vip_conflict = True
-                        st.session_state.rec_before = float_to_time(b_start - 1)
-                        st.session_state.rec_after = float_to_time(b_end + 1)
-                        vip_conflict_msg = f"⚠️ **【VIP {包廂}】已被預訂！**\n👉 於 **{b_time}** 已被「**{b_name}**」預訂 (預計唱 {b_dur}H)。"
-                        break
+            vip_status_msgs = []
+            avail_vips = []
+
+            for room_no in target_rooms:
+                room_conflict = False
+                rec_before = None
+                rec_after = None
+                c_details = []
+
+                for r in data:
+                    if len(r) > 11 and r[11] == room_no:
+                        b_time = r[2]
+                        b_dur = get_duration(r[5] if len(r) > 5 else "")
+                        b_start = time_to_float(b_time)
+                        b_end = b_start + b_dur
+                        
+                        # 碰撞計算 (含 1H 清包廂時間)
+                        if req_end + 1 > b_start and req_start < b_end + 1:
+                            room_conflict = True
+                            rec_before = float_to_time(b_start - 1)
+                            rec_after = float_to_time(b_end + 1)
+                            c_details.append(f"{b_time} 已訂({b_dur}H)")
+
+                if not room_conflict:
+                    avail_vips.append(room_no)
+                    vip_status_msgs.append(f"✅ **【{room_no}】**：空閒可訂！")
+                else:
+                    vip_status_msgs.append(f"⚠️ **【{room_no}】**：{ '、'.join(c_details) } 👉 需改為 **{rec_before}前** 或 **{rec_after}後**")
+
+            st.session_state.available_vips = avail_vips
+
+            # 只要還有任何一間空著，就不算衝突！
+            if len(avail_vips) > 0:
+                is_vip_conflict = False
+                vip_conflict_msg = "🎉 **查詢結果：有空包廂！**\n\n" + "\n\n".join(vip_status_msgs)
+            else:
+                is_vip_conflict = True
+                vip_conflict_msg = "😭 **糟糕！該時段的VIP包廂皆已客滿！**\n\n" + "\n\n".join(vip_status_msgs)
         
-        # 🛡️ 一般時段客滿檢查
+        # 🛡️ 一般時段客滿檢查 (即使VIP有空，也要確認表單有沒有格子可以寫)
         target_row_number = -1
         is_time_full = False
         booked_names = []
@@ -146,27 +175,35 @@ if st.button("🔍 檢查空位與包廂", use_container_width=True):
                         is_time_full = True
                 break
                 
-        # 產生存檔結果
-        if is_vip_conflict:
-            st.session_state.check_status = "error"
-            st.session_state.check_msg = vip_conflict_msg
-        elif is_time_full:
-            booked_by = "、".join(booked_names)
-            st.session_state.check_status = "warning"
-            st.session_state.check_msg = f"⚠️ 糟糕！【{時間}】的一般包廂已經被「{booked_by}」全數訂滿了！"
-            
-            for i in range(requested_index - 1, -1, -1):
-                if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "":
-                    st.session_state.rec_before = data[i][2]; break
-            for i in range(requested_index + 1, len(data)):
-                if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "": 
-                    st.session_state.rec_after = data[i][2]; break
-        elif target_row_number != -1:
-            st.session_state.check_status = "success"
-            st.session_state.check_msg = f"✅ **【{時間}】目前還有位子！** 您可以繼續填寫下方資料完成訂位。"
+        # 產生存檔結果 (整合 VIP 與一般格子狀態)
+        if 包廂 != "不指定":
+            if is_vip_conflict:
+                st.session_state.check_status = "error"
+                st.session_state.check_msg = vip_conflict_msg
+            elif is_time_full:
+                st.session_state.check_status = "warning"
+                st.session_state.check_msg = vip_conflict_msg + "\n\n⚠️ **但是注意：【一般訂位表】的格子已經滿了，無法寫入資料！**"
+            else:
+                st.session_state.check_status = "success"
+                st.session_state.check_msg = vip_conflict_msg + "\n\n👉 **請繼續填寫下方客資完成訂位，並選擇要分配哪一間！**"
         else:
-            st.session_state.check_status = "warning"
-            st.session_state.check_msg = f"❓ 找不到 {時間} 這個時間格子。"
+            if is_time_full:
+                booked_by = "、".join(booked_names)
+                st.session_state.check_status = "warning"
+                st.session_state.check_msg = f"⚠️ 糟糕！【{時間}】的一般包廂已經被「{booked_by}」全數訂滿了！"
+                
+                for i in range(requested_index - 1, -1, -1):
+                    if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "":
+                        st.session_state.rec_before = data[i][2]; break
+                for i in range(requested_index + 1, len(data)):
+                    if len(data[i]) > 3 and ":" in data[i][2] and data[i][3] == "": 
+                        st.session_state.rec_after = data[i][2]; break
+            elif target_row_number != -1:
+                st.session_state.check_status = "success"
+                st.session_state.check_msg = f"✅ **【{時間}】目前還有位子！** 您可以繼續填寫下方資料完成訂位。"
+            else:
+                st.session_state.check_status = "warning"
+                st.session_state.check_msg = f"❓ 找不到 {時間} 這個時間格子。"
 
     except Exception as e:
         st.error(f"❌ 查詢失敗 (請確認該日期檔案已建立)：{e}")
@@ -181,7 +218,7 @@ if st.session_state.check_msg:
     else: 
         st.error(st.session_state.check_msg)
 
-    # 🚀 魔法按鈕區：加入了 on_click，直接呼叫上面的魔法函數！
+    # 一般空位的魔法按鈕
     if st.session_state.rec_before or st.session_state.rec_after:
         st.markdown("💡 **系統為您尋找最接近空位，請點擊按鈕直接帶入：**")
         col_btn1, col_btn2 = st.columns(2)
@@ -216,10 +253,20 @@ with st.form("booking_form"):
         姓名 = st.text_input("姓名", placeholder="例如：王大明")
         聯絡電話 = st.text_input("聯絡電話", placeholder="例如：0912345678")
     with col2:
-        接洽人 = st.text_input("接洽人", placeholder="例如：小薇")
+        接洽人 = st.text_input("接洽人", placeholder="例如：軒3/2")
         備註 = st.text_input("備註 (沒有可留白)", placeholder="例如：可換/未匯訂")
         續時 = st.text_input("續時 (沒有可留白)", placeholder="例如：1")
         卡號 = st.text_input("卡號 (沒有可留白)", placeholder="例如：11572")
+        
+        # 【新增】動態包廂選擇器
+        if 包廂 == "小VIP":
+            # 如果查詢過有空位，就只顯示有空的；如果還沒查，就顯示全部
+            options = st.session_state.available_vips if st.session_state.available_vips else ["101", "102", "103", "205", "305"]
+            實際包廂 = st.selectbox("👉 請選擇要安排哪一間", options)
+        elif 包廂 == "大VIP(317)":
+            實際包廂 = "317"
+        else:
+            實際包廂 = ""
 
     submitted = st.form_submit_button("🚀 確認送出訂位", use_container_width=True)
 
@@ -272,7 +319,8 @@ if submitted:
 
         if target_row_number != -1:
             cell_range = f"D{target_row_number}:L{target_row_number}"
-            update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註, 包廂 if 包廂 != "不指定" else ""]]
+            # 【修改】寫入表單時，寫入的是最後決定的「實際包廂」
+            update_values = [[姓名, 人數, 消費金額, 聯絡電話, 卡號, 接洽人, 續時, 備註, 實際包廂]]
             sheet.update(range_name=cell_range, values=update_values)
             st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的包廂。")
             st.balloons()
