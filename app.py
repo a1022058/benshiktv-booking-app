@@ -28,12 +28,22 @@ def get_duration(amt_str):
     return 3 
 
 # ==========================================
+# 🎯 魔法按鈕專屬動作 (Callback)
+# 告訴系統：在重新載入網頁前，先幫我偷改時間！
+# ==========================================
+def apply_recommended_time(new_time):
+    st.session_state.input_time = new_time.replace(":", "")
+    st.session_state.check_status = "success"
+    st.session_state.check_msg = f"✅ 已為您一鍵切換至【{new_time}】！請繼續填寫下方客資。"
+    st.session_state.rec_before = None
+    st.session_state.rec_after = None
+
+# ==========================================
 # 網頁基礎設定與 Session State 狀態記憶
 # ==========================================
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
 st.title("🎤 賓士府前店 - 快速訂位系統")
 
-# 初始化所有的記憶體 (包含防連點、查詢訊息、輸入框狀態)
 if "input_time" not in st.session_state:
     st.session_state.input_time = "1800"
 if "last_submit" not in st.session_state:
@@ -55,7 +65,6 @@ colA, colB, colC = st.columns(3)
 with colA:
     日期 = st.date_input("選擇日期", datetime.date.today())
 with colB:
-    # 這裡綁定了 key，讓按鈕可以直接控制這個輸入框！
     時間 = st.text_input("時間 (例如 1800)", key="input_time")
 with colC:
     包廂 = st.selectbox("指定VIP包廂", ["不指定", "101", "102", "103", "205", "305", "317"])
@@ -63,7 +72,6 @@ with colC:
 # --- 🔍 查詢按鈕 ---
 if st.button("🔍 檢查空位與包廂", use_container_width=True):
     st.info("🔄 系統查詢中，請稍候...")
-    # 每次重新查詢時，先把舊的推薦按鈕清空
     st.session_state.rec_before = None
     st.session_state.rec_after = None
     
@@ -173,29 +181,26 @@ if st.session_state.check_msg:
     else: 
         st.error(st.session_state.check_msg)
 
-    # 🚀 魔法按鈕區：如果有推薦空位，顯示可以一鍵帶入的按鈕
+    # 🚀 魔法按鈕區：加入了 on_click，直接呼叫上面的魔法函數！
     if st.session_state.rec_before or st.session_state.rec_after:
         st.markdown("💡 **系統為您尋找最接近空位，請點擊按鈕直接帶入：**")
         col_btn1, col_btn2 = st.columns(2)
         
         if st.session_state.rec_before:
-            if col_btn1.button(f"⏱️ 直接改為 {st.session_state.rec_before}", use_container_width=True):
-                # 自動把時間改成沒冒號的格式 (例如 1810)，並切換成綠燈狀態！
-                st.session_state.input_time = st.session_state.rec_before.replace(":", "")
-                st.session_state.check_status = "success"
-                st.session_state.check_msg = f"✅ 已為您一鍵切換至【{st.session_state.rec_before}】！請繼續填寫下方客資。"
-                st.session_state.rec_before = None
-                st.session_state.rec_after = None
-                st.rerun() # 立刻刷新網頁
+            col_btn1.button(
+                f"⏱️ 直接改為 {st.session_state.rec_before}", 
+                use_container_width=True,
+                on_click=apply_recommended_time,
+                args=(st.session_state.rec_before,)
+            )
                 
         if st.session_state.rec_after:
-            if col_btn2.button(f"⏱️ 直接改為 {st.session_state.rec_after}", use_container_width=True):
-                st.session_state.input_time = st.session_state.rec_after.replace(":", "")
-                st.session_state.check_status = "success"
-                st.session_state.check_msg = f"✅ 已為您一鍵切換至【{st.session_state.rec_after}】！請繼續填寫下方客資。"
-                st.session_state.rec_before = None
-                st.session_state.rec_after = None
-                st.rerun() # 立刻刷新網頁
+            col_btn2.button(
+                f"⏱️ 直接改為 {st.session_state.rec_after}", 
+                use_container_width=True,
+                on_click=apply_recommended_time,
+                args=(st.session_state.rec_after,)
+            )
 
 st.divider()
 
@@ -219,7 +224,6 @@ with st.form("booking_form"):
     submitted = st.form_submit_button("🚀 確認送出訂位", use_container_width=True)
 
 if submitted:
-    # --- 🛡️ 3秒防連點機制 ---
     current_time = time.time()
     if current_time - st.session_state.last_submit < 3:
         st.error("⏳ 系統處理中，請勿連續點擊！（防重複訂位機制已啟動）")
@@ -232,7 +236,6 @@ if submitted:
 
     st.info("🔄 正在寫入雲端表單，請稍候...")
     try:
-        # 這裡會抓取 st.session_state.input_time 的值
         確認時間 = st.session_state.input_time 
         if len(確認時間) == 4 and ":" not in 確認時間: 
             確認時間 = 確認時間[:2] + ":" + 確認時間[2:]
@@ -274,7 +277,6 @@ if submitted:
             st.success(f"🎉 **訂位成功！**👉 已為「**{姓名}**」保留 **{確認時間}** 的包廂。")
             st.balloons()
             
-            # 訂位成功後，清除查詢狀態，準備迎接下一組客人
             st.session_state.check_msg = None
             st.session_state.check_status = None
         else:
