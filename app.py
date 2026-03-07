@@ -69,7 +69,7 @@ def show_success_modal(date_str, time_str, name, people, phone, amount):
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
 
 # ==========================================
-# 🎨 網頁視覺美化 (修復隱形文字問題)
+# 🎨 網頁視覺美化 (修復隱形文字問題 2.0)
 # ==========================================
 page_bg_img = '''
 <style>
@@ -95,33 +95,35 @@ div[data-testid="stForm"] {
     border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-/* 4. ✅ 按鈕終極修復：強制給按鈕深色背景、白色文字 */
+/* 4. 按鈕：深藍色背景、白色文字 */
 div.stButton > button {
-    background-color: #1e3a8a !important; /* 深藍色背景 */
-    border: 1px solid #60a5fa !important; /* 淺藍色邊框 */
+    background-color: #1e3a8a !important; 
+    border: 1px solid #60a5fa !important; 
 }
 div.stButton > button p, div.stButton > button span {
-    color: #ffffff !important; /* 白色文字 */
+    color: #ffffff !important; 
     font-weight: bold !important;
 }
 div.stButton > button:hover {
-    background-color: #2563eb !important; /* 滑鼠移過去變亮一點 */
+    background-color: #2563eb !important; 
     border-color: #93c5fd !important;
 }
 
-/* 5. ✅ Checkbox(打勾方塊) 文字修復：強制變白 */
+/* 5. Checkbox(打勾方塊) 文字：強制變白 */
 div[data-testid="stCheckbox"] p, div[data-testid="stCheckbox"] label {
     color: #ffffff !important;
 }
 
-/* 6. ✅ 提示框與浮動視窗：因為底色是亮的，裡面的字要變回深色 */
+/* 6. ✅ 提示框 (Alert) 終極修復：把警告、提示的文字改成純白色！ */
 div[data-testid="stAlert"] p, div[data-testid="stAlert"] span {
+    color: #ffffff !important; 
+}
+
+/* 7. 浮動視窗 (Dialog)：因為它是白底，裡面的字必須維持深灰色 */
+div[data-testid="stDialog"] p, div[data-testid="stDialog"] li, div[data-testid="stDialog"] h2, div[data-testid="stDialog"] span {
     color: #1f2937 !important; 
 }
-div[data-testid="stDialog"] p, div[data-testid="stDialog"] li, div[data-testid="stDialog"] h2 {
-    color: #1f2937 !important; 
-}
-/* 浮動視窗裡的「確認」按鈕特別給個綠色 */
+/* 確保浮動視窗裡的「確認按鈕」是綠底白字 */
 div[data-testid="stDialog"] div.stButton > button {
     background-color: #10b981 !important; 
     border: none !important;
