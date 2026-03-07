@@ -80,8 +80,8 @@ page_bg_img = '''
     background-attachment: fixed;
 }
 
-/* 2. 主畫面的字體顏色強制變白 */
-h1, h2, h3, label, .stCheckbox label, .stMarkdown p {
+/* 2. 主畫面的標題與一般文字變白 */
+h1, h2, h3, label, .stMarkdown p {
     color: #ffffff !important;
 }
 h1 { text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
@@ -95,32 +95,37 @@ div[data-testid="stForm"] {
     border: 1px solid rgba(255, 255, 255, 0.15);
 }
 
-/* 4. ✅ 搶救按鈕大作戰：幫所有按鈕加上半透明高級深色底，白字才顯眼 */
+/* 4. ✅ 按鈕終極修復：強制給按鈕深色背景、白色文字 */
 div.stButton > button {
-    background-color: rgba(255, 255, 255, 0.15) !important;
-    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    background-color: #1e3a8a !important; /* 深藍色背景 */
+    border: 1px solid #60a5fa !important; /* 淺藍色邊框 */
 }
-div.stButton > button p {
-    color: #ffffff !important; 
+div.stButton > button p, div.stButton > button span {
+    color: #ffffff !important; /* 白色文字 */
     font-weight: bold !important;
 }
 div.stButton > button:hover {
-    background-color: rgba(255, 255, 255, 0.25) !important;
-    border: 1px solid #ffffff !important;
+    background-color: #2563eb !important; /* 滑鼠移過去變亮一點 */
+    border-color: #93c5fd !important;
 }
 
-/* 5. ✅ 搶救提示框與浮動視窗：裡面因為是亮色底，文字強制變回深色 */
-div[data-testid="stAlert"] p {
-    color: #1f2937 !important; 
-    font-weight: 500;
+/* 5. ✅ Checkbox(打勾方塊) 文字修復：強制變白 */
+div[data-testid="stCheckbox"] p, div[data-testid="stCheckbox"] label {
+    color: #ffffff !important;
 }
-div[data-testid="stDialog"] p, 
-div[data-testid="stDialog"] li,
-div[data-testid="stDialog"] span,
-div[data-testid="stDialog"] h2 {
+
+/* 6. ✅ 提示框與浮動視窗：因為底色是亮的，裡面的字要變回深色 */
+div[data-testid="stAlert"] p, div[data-testid="stAlert"] span {
     color: #1f2937 !important; 
 }
-/* 確保浮動視窗裡的按鈕字體一樣是白的 */
+div[data-testid="stDialog"] p, div[data-testid="stDialog"] li, div[data-testid="stDialog"] h2 {
+    color: #1f2937 !important; 
+}
+/* 浮動視窗裡的「確認」按鈕特別給個綠色 */
+div[data-testid="stDialog"] div.stButton > button {
+    background-color: #10b981 !important; 
+    border: none !important;
+}
 div[data-testid="stDialog"] div.stButton > button p {
     color: #ffffff !important;
 }
@@ -508,7 +513,6 @@ if submitted:
             st.session_state.check_msg = None
             st.session_state.check_status = None
             
-            # 觸發浮動視窗
             show_success_modal(file_date_str, 確認時間, 姓名, 人數, 聯絡電話, 消費金額)
             
         else:
