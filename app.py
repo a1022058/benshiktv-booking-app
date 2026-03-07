@@ -45,7 +45,7 @@ def apply_recommended_time(new_time):
     st.session_state.rec_after = None
 
 # ==========================================
-# 🎯 訂位成功浮動視窗 (加入清空表單魔法)
+# 🎯 訂位成功浮動視窗
 # ==========================================
 @st.dialog("🎉 訂位成功！")
 def show_success_modal(date_str, time_str, name, people, phone, amount):
@@ -57,9 +57,7 @@ def show_success_modal(date_str, time_str, name, people, phone, amount):
     * **手機號碼:** {phone}
     * **消費金額:** {amount}
     """)
-    # 當按下確認關閉時，系統才會去把表單的記憶體清空！
     if st.button("✅ 確認並關閉", use_container_width=True):
-        # 針對有設定 Key 的格子進行清空
         for key in ["f_people", "f_amount", "f_name", "f_phone", "f_contact", "f_memo", "f_ext", "f_card"]:
             st.session_state[key] = ""
         st.session_state["f_is_spec"] = False
@@ -70,20 +68,25 @@ def show_success_modal(date_str, time_str, name, people, phone, amount):
 # ==========================================
 st.set_page_config(page_title="賓士府前店 - 訂位系統", page_icon="🎤", layout="centered")
 
+# ==========================================
+# 🎨 網頁視覺美化 (修復隱形文字問題)
+# ==========================================
 page_bg_img = '''
 <style>
+/* 1. 大背景設定：藍紫高級漸層 */
 .stApp {
     background: linear-gradient(135deg, #0f172a 0%, #1a2a6c 50%, #3b0764 100%);
     background-size: cover;
     background-attachment: fixed;
 }
-h1 {
+
+/* 2. 主畫面的字體顏色強制變白 */
+h1, h2, h3, label, .stCheckbox label, .stMarkdown p {
     color: #ffffff !important;
-    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
 }
-h3 {
-    color: #e0e0e0 !important;
-}
+h1 { text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+
+/* 3. 表單毛玻璃特效 */
 div[data-testid="stForm"] {
     background-color: rgba(255, 255, 255, 0.08);
     border-radius: 15px;
@@ -91,8 +94,35 @@ div[data-testid="stForm"] {
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.15);
 }
-p, label, .stCheckbox label {
-    color: #f0f0f0 !important;
+
+/* 4. ✅ 搶救按鈕大作戰：幫所有按鈕加上半透明高級深色底，白字才顯眼 */
+div.stButton > button {
+    background-color: rgba(255, 255, 255, 0.15) !important;
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+}
+div.stButton > button p {
+    color: #ffffff !important; 
+    font-weight: bold !important;
+}
+div.stButton > button:hover {
+    background-color: rgba(255, 255, 255, 0.25) !important;
+    border: 1px solid #ffffff !important;
+}
+
+/* 5. ✅ 搶救提示框與浮動視窗：裡面因為是亮色底，文字強制變回深色 */
+div[data-testid="stAlert"] p {
+    color: #1f2937 !important; 
+    font-weight: 500;
+}
+div[data-testid="stDialog"] p, 
+div[data-testid="stDialog"] li,
+div[data-testid="stDialog"] span,
+div[data-testid="stDialog"] h2 {
+    color: #1f2937 !important; 
+}
+/* 確保浮動視窗裡的按鈕字體一樣是白的 */
+div[data-testid="stDialog"] div.stButton > button p {
+    color: #ffffff !important;
 }
 </style>
 '''
@@ -363,11 +393,8 @@ st.divider()
 # ❷ 第二階段：填寫客資與送出 
 # ==========================================
 st.markdown("### ❷ 填寫客資並送出")
-
-# 📌 【移除 clear_on_submit=True】讓表單在遇到錯誤時，能「保留原本打的字」！
 with st.form("booking_form"):
     col1, col2 = st.columns(2)
-    # 📌 【綁定 Key】幫每個輸入框加上專屬鑰匙，方便我們成功時手動清空
     with col1:
         人數 = st.text_input("人數", placeholder="例如：4", key="f_people")
         消費金額 = st.text_input("消費金額 (請包含時數)", placeholder="例如：4099/5H", key="f_amount")
@@ -404,8 +431,8 @@ if submitted:
     st.session_state.last_submit = current_time
 
     if 姓名 == "":
-        st.error("❌ 訂位失敗：請輸入客人「姓名」喔！")
-        st.stop() # 遇到錯誤停在這裡，因為我們改寫了設定，你的字就不會被吃掉了！
+        st.error("❌ 訂位失敗：請輸入客人「姓名」喔！(請重新填寫送出)")
+        st.stop()
 
     st.info("🔄 正在寫入雲端表單，請稍候...")
     try:
@@ -481,11 +508,10 @@ if submitted:
             st.session_state.check_msg = None
             st.session_state.check_status = None
             
-            # 📌 觸發成功浮動視窗！
+            # 觸發浮動視窗
             show_success_modal(file_date_str, 確認時間, 姓名, 人數, 聯絡電話, 消費金額)
             
         else:
-            # 📌 順便幫你換上更清楚的防呆錯誤訊息！
             st.error(f"⚠️ 寫入失敗！包廂有空，但 Google 訂位表上【{確認時間}】的『格子已經滿了』寫不下了！\n\n💡 解決方法：請改選前後 10 分鐘的空檔送出，或前往 Google 表單手動插入空白行。")
 
     except Exception as e:
